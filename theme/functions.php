@@ -221,17 +221,59 @@ class Timberland extends Site
 
 new Timberland();
 
-function acf_block_render_callback($block, $content) {
+abstract class Base_Block {
+    protected $context;
+    protected $fields;
+    protected $post;
+    protected $block; // Add $block as a class property
+    
+    public function __construct($block, $context, $post, $fields) {
+        $this->context = $context;
+        $this->post = $post;
+        $this->fields = $fields;
+        $this->block = $block;
+
+        // Add block specific functionalities
+        $this->init($block);
+    }
+
+    // This method is for block specific initialization
+    abstract protected function init($block);
+
+    public function render() {
+        $template = $this->block['path'] . '/index.twig'; // Use the $block class property
+        Timber::render($template, $this->context);
+    }
+}
+class Block_Factory {
+    public static function create($block, $context, $post, $fields) {
+        $block_name = str_replace('acf/', '', $block['name']);
+        $block_class_name = ucfirst($block_name) . "_Block";
+
+        // Require block specific class file
+        $block_file_path = dirname(__FILE__) . "/blocks/{$block_name}/functions.php";
+        if(file_exists($block_file_path)) {
+            require_once $block_file_path;
+        }
+
+        if(class_exists($block_class_name)) {
+            return new $block_class_name($block, $context, $post, $fields);
+        } else {
+            throw new Exception("Block class {$block_class_name} does not exist.");
+        }
+    }
+}
+
+function acf_block_render_callback($block, $content = '') {
     $context = Timber::context();
     $context['post'] = new Post();
     $context['block'] = $block;
     $context['fields'] = get_fields();
-    $template = $block['path'] . '/index.twig';
 
-    Timber::render($template, $context);
-}
-
-// Require block functions files
-foreach (glob(dirname(__FILE__) . "/blocks/*/functions.php") as $file) {
-    require_once $file;
+    try {
+        $block_instance = Block_Factory::create($block, $context, $context['post'], $context['fields']);
+        $block_instance->render();
+    } catch (Exception $e) {
+        error_log($e->getMessage());
+    }
 }
